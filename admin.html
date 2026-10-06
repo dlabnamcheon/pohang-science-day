@@ -47,6 +47,19 @@
     </section>
 
     <section class="panel">
+      <h2>예시 게임 올리기</h2>
+      <p class="lead">전시장 맨 위 '선생님 예시 게임' 칸에 따로 보입니다. 등록코드 없이 여러 개 올릴 수 있어요.</p>
+      <form id="exForm" novalidate>
+        <div class="field"><label for="exTitle">게임 이름</label><input type="text" id="exTitle" maxlength="30" autocomplete="off"></div>
+        <div class="field"><label for="exBy">만든이 표시</label><input type="text" id="exBy" maxlength="10" value="선생님 예시" autocomplete="off"></div>
+        <div class="field"><label for="exFile">HTML 게임 파일</label><input type="file" id="exFile" accept=".html,.htm,text/html"><span class="hint">HTML 파일 하나, 최대 900KB</span></div>
+        <div class="note err" id="exErr" hidden></div>
+        <div class="note ok" id="exOk" hidden></div>
+        <button class="btn" type="submit" id="exBtn">예시 게임 올리기</button>
+      </form>
+    </section>
+
+    <section class="panel">
       <h2>올라온 게임 <span class="count" id="stat"></span></h2>
       <p class="lead">숨기면 전시장 목록에서 사라집니다. 삭제하면 게임이 지워지고 그 닉네임으로는 다시 올릴 수 없어요.</p>
       <div class="tools">
@@ -63,7 +76,7 @@
 <script type="module">
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { db, auth, ready, configured, esc, authMessage, ADMIN_EMAIL, paintIcons } from "./common.js";
+import { db, auth, ready, configured, esc, authMessage, ADMIN_EMAIL, MAX_BYTES, paintIcons } from "./common.js";
 paintIcons();
 
 const $ = id => document.getElementById(id);
@@ -92,7 +105,7 @@ async function load() {
     const [cfg, idx] = await Promise.all([getDoc(doc(db, "config", "event")), getDoc(doc(db, "index", "all"))]);
     if (document.activeElement !== $("joinCode")) $("joinCode").value = cfg.exists() ? (cfg.data().joinCode || "") : "";
     const g = (idx.exists() && idx.data().g) || {};
-    games = Object.entries(g).map(([id, e]) => ({ id, t: String(e.t || ""), a: String(e.a || ""), c: Number(e.c) || 0, h: !!e.h }))
+    games = Object.entries(g).map(([id, e]) => ({ id, t: String(e.t || ""), a: String(e.a || ""), c: Number(e.c) || 0, h: !!e.h, x: !!e.x }))
       .sort((x, y) => y.c - x.c);
     if (!cfg.exists() || !cfg.data().joinCode) err($("listErr"), "등록코드가 아직 없어요. 위에서 코드를 정해 저장해야 아이들이 게임을 올릴 수 있습니다.");
   } catch (x) {
@@ -108,7 +121,7 @@ function render() {
   $("stat").textContent = `전체 ${games.length}개` + (hidden ? ` · 숨김 ${hidden}개` : "");
   $("list").innerHTML = list.length ? list.map(g => `
     <div class="item${g.h ? " off" : ""}">
-      <div class="info"><b>${esc(g.t)}</b><span>${esc(g.a)} · ${new Date(g.c).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}${g.h ? " · 숨김" : ""}</span></div>
+      <div class="info"><b>${esc(g.t)}</b><span>${esc(g.a)} · ${new Date(g.c).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}${g.h ? " · 숨김" : ""}${g.x ? " · 예시" : ""}</span></div>
       <div class="acts">
         <a class="btn soft small" href="index.html#g-${esc(g.id)}" target="_blank" rel="noopener">열어 보기</a>
         <button class="btn soft small" type="button" data-act="hide" data-id="${esc(g.id)}">${g.h ? "다시 보이기" : "숨기기"}</button>
@@ -153,6 +166,28 @@ $("codeForm").addEventListener("submit", async e => {
     err($("listErr"), "");
   } catch (x) { err($("listErr"), authMessage(x)); }
   $("codeBtn").disabled = false;
+});
+
+$("exForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const title = $("exTitle").value.trim(), by = $("exBy").value.trim() || "선생님 예시", f = $("exFile").files[0];
+  $("exOk").hidden = true;
+  if (!title) return err($("exErr"), "예시 게임 이름을 써 주세요.");
+  if (!f) return err($("exErr"), "예시 게임 파일을 골라 주세요.");
+  const html = await f.text();
+  if (new Blob([html]).size > MAX_BYTES) return err($("exErr"), "파일이 너무 커요 (최대 900KB).");
+  err($("exErr"), "");
+  $("exBtn").disabled = true;
+  try {
+    const id = "ex" + Date.now().toString(36);
+    await setDoc(doc(db, "files", id), { html });
+    await setDoc(doc(db, "index", "all"), { g: { [id]: { t: title, a: by, c: Date.now(), h: false, x: true } } }, { merge: true });
+    $("exForm").reset();
+    $("exOk").hidden = false;
+    $("exOk").textContent = "예시 게임을 올렸어요: " + title;
+    await load();
+  } catch (x) { err($("exErr"), authMessage(x)); }
+  $("exBtn").disabled = false;
 });
 
 $("q").addEventListener("input", render);
