@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>전시장 관리 · AI 게임 전시장</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <span class="logo" data-icon="pad"></span>
+      <span><b>AI 게임 전시장</b><span>관리자</span></span>
+    </a>
+    <a class="nav" href="index.html" style="display:inline-block">전시장</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="pagehead"><p class="eyebrow">Admin</p><h1>전시장 관리</h1></div>
+  <section class="panel narrow" id="loginPanel" hidden>
+    <h2>관리자 로그인</h2>
+    <form id="loginForm" novalidate>
+      <div class="field">
+        <label for="apw">관리자 비밀번호</label>
+        <input type="password" id="apw" autocomplete="off">
+      </div>
+      <div class="note err" id="loginErr" hidden></div>
+      <button class="btn block" type="submit" id="loginBtn">로그인</button>
+    </form>
+  </section>
+
+  <div id="adminArea" hidden>
+    <section class="panel">
+      <h2>행사 등록코드</h2>
+      <p class="lead">아이들이 처음 게임을 올릴 때 넣는 행사 등록코드예요. 바꾸면 그때부터 새 코드만 통합니다. 이미 만든 닉네임은 그대로 쓸 수 있어요.</p>
+      <form id="codeForm" class="row" novalidate>
+        <div class="field" style="margin:0">
+          <input type="text" id="joinCode" maxlength="20" autocomplete="off" aria-label="등록코드">
+        </div>
+        <button class="btn" type="submit" id="codeBtn" style="flex:0 1 150px">코드 저장</button>
+      </form>
+      <div class="note ok" id="codeOk" hidden style="margin:12px 0 0"></div>
+    </section>
+
+    <section class="panel">
+      <h2>올라온 게임 <span class="count" id="stat"></span></h2>
+      <p class="lead">숨기면 전시장 목록에서 사라집니다. 삭제하면 게임이 지워지고 그 닉네임으로는 다시 올릴 수 없어요.</p>
+      <div class="tools">
+        <input class="search" type="search" id="q" placeholder="제목이나 아이디로 찾기" autocomplete="off" aria-label="게임 찾기">
+        <button class="btn soft small" type="button" id="reload">새로 고침</button>
+        <button class="btn soft small" type="button" id="outBtn">로그아웃</button>
+      </div>
+      <div class="note err" id="listErr" hidden></div>
+      <div class="list" id="list"></div>
+    </section>
+  </div>
+</main>
+
+<script type="module">
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { db, auth, ready, configured, esc, authMessage, ADMIN_EMAIL, paintIcons } from "./common.js";
+paintIcons();
+
+const $ = id => document.getElementById(id);
+let games = [];
+let armed = "";   // 삭제 확인 중인 게임
+
+function err(el, msg) { el.hidden = !msg; el.textContent = msg || ""; }
+
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("loginBtn").disabled = true;
+  try {
+    await ready;
+    await signInWithEmailAndPassword(auth, ADMIN_EMAIL, $("apw").value);
+    $("apw").value = "";
+    err($("loginErr"), "");
+  } catch (x) {
+    err($("loginErr"), x.code && x.code.includes("credential") ? "비밀번호가 맞지 않아요." : authMessage(x));
+  }
+  $("loginBtn").disabled = false;
+});
+
+async function load() {
+  err($("listErr"), "");
+  try {
+    const [cfg, idx] = await Promise.all([getDoc(doc(db, "config", "event")), getDoc(doc(db, "index", "all"))]);
+    if (document.activeElement !== $("joinCode")) $("joinCode").value = cfg.exists() ? (cfg.data().joinCode || "") : "";
+    const g = (idx.exists() && idx.data().g) || {};
+    games = Object.entries(g).map(([id, e]) => ({ id, t: String(e.t || ""), a: String(e.a || ""), c: Number(e.c) || 0, h: !!e.h }))
+      .sort((x, y) => y.c - x.c);
+    if (!cfg.exists() || !cfg.data().joinCode) err($("listErr"), "등록코드가 아직 없어요. 위에서 코드를 정해 저장해야 아이들이 게임을 올릴 수 있습니다.");
+  } catch (x) {
+    err($("listErr"), authMessage(x));
+  }
+  render();
+}
+
+function render() {
+  const q = $("q").value.trim().toLowerCase();
+  const list = q ? games.filter(g => g.t.toLowerCase().includes(q) || g.a.toLowerCase().includes(q)) : games;
+  const hidden = games.filter(g => g.h).length;
+  $("stat").textContent = `전체 ${games.length}개` + (hidden ? ` · 숨김 ${hidden}개` : "");
+  $("list").innerHTML = list.length ? list.map(g => `
+    <div class="item${g.h ? " off" : ""}">
+      <div class="info"><b>${esc(g.t)}</b><span>${esc(g.a)} · ${new Date(g.c).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}${g.h ? " · 숨김" : ""}</span></div>
+      <div class="acts">
+        <a class="btn soft small" href="index.html#g-${esc(g.id)}" target="_blank" rel="noopener">열어 보기</a>
+        <button class="btn soft small" type="button" data-act="hide" data-id="${esc(g.id)}">${g.h ? "다시 보이기" : "숨기기"}</button>
+        <button class="btn danger small" type="button" data-act="del" data-id="${esc(g.id)}">${armed === g.id ? "한 번 더 누르면 삭제" : "삭제"}</button>
+      </div>
+    </div>`).join("") : `<div class="empty">${q ? "찾는 게임이 없어요." : "아직 올라온 게임이 없어요."}</div>`;
+}
+
+$("list").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  const g = games.find(x => x.id === b.dataset.id);
+  if (!g) return;
+  try {
+    if (b.dataset.act === "hide") {
+      armed = "";
+      await updateDoc(doc(db, "index", "all"), { ["g." + g.id + ".h"]: !g.h });
+      g.h = !g.h;
+    } else {
+      if (armed !== g.id) { armed = g.id; render(); return; }
+      armed = "";
+      await updateDoc(doc(db, "index", "all"), { ["g." + g.id]: deleteField() });
+      await deleteDoc(doc(db, "files", g.id));
+      await deleteDoc(doc(db, "members", g.id));
+      games = games.filter(x => x.id !== g.id);
+    }
+    err($("listErr"), "");
+  } catch (x) { err($("listErr"), authMessage(x)); }
+  render();
+});
+
+$("codeForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const code = $("joinCode").value.trim();
+  $("codeOk").hidden = true;
+  if (!code) return err($("listErr"), "등록코드를 한 글자 이상 넣어 주세요.");
+  $("codeBtn").disabled = true;
+  try {
+    await setDoc(doc(db, "config", "event"), { joinCode: code });
+    $("codeOk").hidden = false;
+    $("codeOk").textContent = "저장했어요. 지금 등록코드: " + code;
+    err($("listErr"), "");
+  } catch (x) { err($("listErr"), authMessage(x)); }
+  $("codeBtn").disabled = false;
+});
+
+$("q").addEventListener("input", render);
+$("reload").addEventListener("click", load);
+$("outBtn").addEventListener("click", () => signOut(auth));
+
+if (!configured) {
+  $("loginPanel").hidden = false;
+  err($("loginErr"), "아직 설정이 끝나지 않았어요. firebase-config.js 파일에 Firebase 설정값을 넣어 주세요.");
+} else {
+  ready.then(() => onAuthStateChanged(auth, user => {
+    const ok = !!user && user.email === ADMIN_EMAIL;
+    $("loginPanel").hidden = ok;
+    $("adminArea").hidden = !ok;
+    if (ok) load();
+  }));
+}
+</script>
+</body>
+</html>
