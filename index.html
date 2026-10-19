@@ -14,6 +14,7 @@
 .qr button { position: absolute; top: -10px; right: -10px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink-soft); cursor: pointer; line-height: 1; }
 .art .pv { position: absolute; inset: 0; overflow: hidden; background: #fff; }
 .art .pv iframe { position: absolute; left: 0; top: 0; width: 286%; height: 286%; border: 0; transform: scale(.35); transform-origin: 0 0; pointer-events: none; }
+.art .shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .art.has-pv > svg { display: none; }
 .art.has-pv .tl, .art.has-pv .br { z-index: 1; background: rgba(17,28,51,.72); padding: 3px 8px; border-radius: 6px; opacity: 1; }
 @media (max-width: 760px) { .qr { display: none; } }
@@ -105,7 +106,7 @@ $("qrClose").addEventListener("click", () => { $("qr").hidden = true; });
 function card(g) {
   const tone = g.x ? "#d9480f" : TONES[hashOf(g.id) % TONES.length];
   return `<article class="game">
-    <div class="art"${g.x ? ' data-pv="' + esc(g.id) + '"' : ""} style="background:${tone}"><span class="tl">${g.x ? "EXAMPLE" : "GAME"}</span>${ICON.pad}<span class="br">MADE WITH AI</span></div>
+    <div class="art${g.p ? " has-pv" : ""}"${g.x && !g.p ? ' data-pv="' + esc(g.id) + '"' : ""} style="background:${tone}">${g.p ? '<img class="shot" alt="" src="' + g.p + '">' : ""}<span class="tl">${g.x ? "EXAMPLE" : "GAME"}</span>${ICON.pad}<span class="br">MADE WITH AI</span></div>
     <div class="body">
       <div class="t">${esc(g.t)}</div>
       <div class="a">${esc(g.a)} · ${timeAgo(g.c)}</div>
@@ -146,7 +147,7 @@ function render() {
   const q = $("q").value.trim().toLowerCase();
   const list = q ? games.filter(g => g.t.toLowerCase().includes(q) || g.a.toLowerCase().includes(q)) : games;
   $("grid").innerHTML = list.slice(0, shown).map(card).join("");
-  const exKey = examples.map(e => e.id + ":" + e.c).join(",");
+  const exKey = examples.map(e => e.id + ":" + e.c + ":" + e.p.length).join(",");
   if (exKey !== lastExKey) { lastExKey = exKey; htmlCache.clear(); $("exGrid").innerHTML = examples.map(card).join(""); loadPreviews(); }
   $("exWrap").hidden = !examples.length || !!q;
   $("more").hidden = list.length <= shown;
@@ -174,7 +175,7 @@ async function load() {
     const g = (snap.exists() && snap.data().g) || {};
     const all = Object.entries(g)
       .filter(([, e]) => e && !e.h)
-      .map(([id, e]) => ({ id, t: String(e.t || ""), a: String(e.a || ""), c: Number(e.c) || 0, x: !!e.x }))
+      .map(([id, e]) => ({ id, t: String(e.t || ""), a: String(e.a || ""), c: Number(e.c) || 0, x: !!e.x, p: /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(e.p || "") ? e.p : "" }))
       .sort((x, y) => y.c - x.c);
     examples = all.filter(v => v.x).reverse();
     games = all.filter(v => !v.x);
