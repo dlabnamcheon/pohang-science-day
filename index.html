@@ -14,7 +14,10 @@
 .qr button { position: absolute; top: -10px; right: -10px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink-soft); cursor: pointer; line-height: 1; }
 .art .pv { position: absolute; inset: 0; overflow: hidden; background: #fff; }
 .art .pv iframe { position: absolute; left: 0; top: 0; width: 286%; height: 286%; border: 0; transform: scale(.35); transform-origin: 0 0; pointer-events: none; }
-.art .shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.art .shot-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(14px); transform: scale(1.2); }
+.art .shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+#exGrid .game .art { height: 220px; overflow: hidden; }
+@media (max-width: 520px) { #exGrid .game .art { height: 170px; } }
 .art.has-pv > svg { display: none; }
 .art.has-pv .tl, .art.has-pv .br { z-index: 1; background: rgba(17,28,51,.72); padding: 3px 8px; border-radius: 6px; opacity: 1; }
 @media (max-width: 760px) { .qr { display: none; } }
@@ -94,6 +97,8 @@ let games = [];      // {id, t, a, c}
 let examples = [];
 let lastExKey = "";
 const htmlCache = new Map();
+// 예시 게임 대표 이미지 (thumbs 폴더, 게임 이름으로 연결)
+const THUMBS = { "똥피하기": "thumbs/ddong.png", "젤리퐁퐁": "thumbs/jelly.png", "뱀 키우기게임(스네이크)": "thumbs/snake.png", "두더지잡기": "thumbs/mole.png" };
 let shown = PAGE;
 let currentHtml = "";
 paintIcons();
@@ -105,8 +110,9 @@ $("qrClose").addEventListener("click", () => { $("qr").hidden = true; });
 
 function card(g) {
   const tone = g.x ? "#d9480f" : TONES[hashOf(g.id) % TONES.length];
+  const shot = g.p || (g.x ? THUMBS[g.t] || "" : "");
   return `<article class="game">
-    <div class="art${g.p ? " has-pv" : ""}"${g.x && !g.p ? ' data-pv="' + esc(g.id) + '"' : ""} style="background:${tone}">${g.p ? '<img class="shot" alt="" src="' + g.p + '">' : ""}<span class="tl">${g.x ? "EXAMPLE" : "GAME"}</span>${ICON.pad}<span class="br">MADE WITH AI</span></div>
+    <div class="art${shot ? " has-pv" : ""}"${g.x && !shot ? ' data-pv="' + esc(g.id) + '"' : ""} style="background:${tone}">${shot ? '<img class="shot-bg" alt="" src="' + shot + '"><img class="shot" alt="" src="' + shot + '">' : ""}<span class="tl">${g.x ? "EXAMPLE" : "GAME"}</span>${ICON.pad}<span class="br">MADE WITH AI</span></div>
     <div class="body">
       <div class="t">${esc(g.t)}</div>
       <div class="a">${esc(g.a)} · ${timeAgo(g.c)}</div>
