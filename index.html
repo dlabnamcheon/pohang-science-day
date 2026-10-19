@@ -12,6 +12,10 @@
 .qr b { display: block; margin-top: 8px; font-size: 15px; font-weight: 900; }
 .qr span { display: block; font-size: 12px; color: var(--ink-soft); }
 .qr button { position: absolute; top: -10px; right: -10px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink-soft); cursor: pointer; line-height: 1; }
+.art .pv { position: absolute; inset: 0; overflow: hidden; background: #fff; }
+.art .pv iframe { position: absolute; left: 0; top: 0; width: 286%; height: 286%; border: 0; transform: scale(.35); transform-origin: 0 0; pointer-events: none; }
+.art.has-pv > svg { display: none; }
+.art.has-pv .tl, .art.has-pv .br { z-index: 1; background: rgba(17,28,51,.72); padding: 3px 8px; border-radius: 6px; opacity: 1; }
 @media (max-width: 760px) { .qr { display: none; } }
 </style>
 </head>
@@ -80,13 +84,15 @@
 
 <script type="module">
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { db, configured, esc, hashOf, timeAgo, mountGame, ICON, paintIcons } from "./common.js";
+import { db, configured, esc, hashOf, timeAgo, mountGame, withShim, ICON, paintIcons } from "./common.js";
 
 const $ = id => document.getElementById(id);
 const PAGE = 48;
 const TONES = ["#2453d4", "#1f3a8a", "#0f7a8a", "#6a3fd0"];
 let games = [];      // {id, t, a, c}
 let examples = [];
+let lastExKey = "";
+const htmlCache = new Map();
 let shown = PAGE;
 let currentHtml = "";
 paintIcons();
@@ -99,7 +105,7 @@ $("qrClose").addEventListener("click", () => { $("qr").hidden = true; });
 function card(g) {
   const tone = g.x ? "#d9480f" : TONES[hashOf(g.id) % TONES.length];
   return `<article class="game">
-    <div class="art" style="background:${tone}"><span class="tl">${g.x ? "EXAMPLE" : "GAME"}</span>${ICON.pad}<span class="br">MADE WITH AI</span></div>
+    <div class="art"${g.x ? ' data-pv="' + esc(g.id) + '"' : ""} style="background:${tone}"><span class="tl">${g.x ? "EXAMPLE" : "GAME"}</span>${ICON.pad}<span class="br">MADE WITH AI</span></div>
     <div class="body">
       <div class="t">${esc(g.t)}</div>
       <div class="a">${esc(g.a)} · ${timeAgo(g.c)}</div>
@@ -108,11 +114,40 @@ function card(g) {
   </article>`;
 }
 
+async function getHtml(id) {
+  if (!htmlCache.has(id)) {
+    const snap = await getDoc(doc(db, "files", id));
+    if (!snap.exists()) throw new Error("none");
+    htmlCache.set(id, snap.data().html || "");
+  }
+  return htmlCache.get(id);
+}
+
+// 예시 게임 카드에 실제 게임 화면을 작게 띄움 (보기만 되고 조작은 안 됨)
+function loadPreviews() {
+  document.querySelectorAll("#exGrid [data-pv]").forEach(async art => {
+    try {
+      const html = await getHtml(art.dataset.pv);
+      const box = document.createElement("div");
+      box.className = "pv";
+      const fr = document.createElement("iframe");
+      fr.setAttribute("sandbox", "allow-scripts");
+      fr.setAttribute("tabindex", "-1");
+      fr.setAttribute("aria-hidden", "true");
+      fr.srcdoc = withShim(html);
+      box.appendChild(fr);
+      art.prepend(box);
+      art.classList.add("has-pv");
+    } catch (e) {}
+  });
+}
+
 function render() {
   const q = $("q").value.trim().toLowerCase();
   const list = q ? games.filter(g => g.t.toLowerCase().includes(q) || g.a.toLowerCase().includes(q)) : games;
   $("grid").innerHTML = list.slice(0, shown).map(card).join("");
-  $("exGrid").innerHTML = examples.map(card).join("");
+  const exKey = examples.map(e => e.id + ":" + e.c).join(",");
+  if (exKey !== lastExKey) { lastExKey = exKey; htmlCache.clear(); $("exGrid").innerHTML = examples.map(card).join(""); loadPreviews(); }
   $("exWrap").hidden = !examples.length || !!q;
   $("more").hidden = list.length <= shown;
   $("statNum").textContent = String(games.length).padStart(2, "0");
@@ -161,9 +196,7 @@ async function openGame(id) {
   $("pMsg").hidden = false;
   $("pMsg").textContent = "게임을 불러오는 중이에요…";
   try {
-    const snap = await getDoc(doc(db, "files", id));
-    if (!snap.exists()) throw new Error("none");
-    currentHtml = snap.data().html || "";
+    currentHtml = await getHtml(id);
     start();
   } catch (e) {
     $("pMsg").textContent = "이 게임을 열 수 없어요. 전시장으로 돌아가 다른 게임을 골라 보세요.";
