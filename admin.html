@@ -68,6 +68,14 @@
         <button class="btn soft small" type="button" id="outBtn">로그아웃</button>
       </div>
       <div class="note err" id="listErr" hidden></div>
+      <div class="note info" id="imgBox" hidden>
+        <b id="imgFor"></b> 대표 이미지: 게임 화면을 캡처(Win+Shift+S)한 뒤 <b>Ctrl+V</b>로 붙여 넣거나, 이미지 파일을 고르세요.
+        <div class="row" style="margin-top:10px">
+          <input type="file" id="imgFile" accept="image/*">
+          <button class="btn soft small" type="button" id="imgDel">이미지 지우기</button>
+          <button class="btn soft small" type="button" id="imgCancel">닫기</button>
+        </div>
+      </div>
       <div class="list" id="list"></div>
     </section>
   </div>
@@ -105,7 +113,7 @@ async function load() {
     const [cfg, idx] = await Promise.all([getDoc(doc(db, "config", "event")), getDoc(doc(db, "index", "all"))]);
     if (document.activeElement !== $("joinCode")) $("joinCode").value = cfg.exists() ? (cfg.data().joinCode || "") : "";
     const g = (idx.exists() && idx.data().g) || {};
-    games = Object.entries(g).map(([id, e]) => ({ id, t: String(e.t || ""), a: String(e.a || ""), c: Number(e.c) || 0, h: !!e.h, x: !!e.x }))
+    games = Object.entries(g).map(([id, e]) => ({ id, t: String(e.t || ""), a: String(e.a || ""), c: Number(e.c) || 0, h: !!e.h, x: !!e.x, p: !!e.p }))
       .sort((x, y) => y.c - x.c);
     if (!cfg.exists() || !cfg.data().joinCode) err($("listErr"), "등록코드가 아직 없어요. 위에서 코드를 정해 저장해야 아이들이 게임을 올릴 수 있습니다.");
   } catch (x) {
@@ -125,6 +133,7 @@ function render() {
       <div class="acts">
         <a class="btn soft small" href="index.html#g-${esc(g.id)}" target="_blank" rel="noopener">열어 보기</a>
         <button class="btn soft small" type="button" data-act="hide" data-id="${esc(g.id)}">${g.h ? "다시 보이기" : "숨기기"}</button>
+        ${g.x ? '<button class="btn soft small" type="button" data-act="img" data-id="' + esc(g.id) + '">' + (g.p ? "이미지 바꾸기" : "대표 이미지") + '</button>' : ""}
         <button class="btn danger small" type="button" data-act="del" data-id="${esc(g.id)}">${armed === g.id ? "한 번 더 누르면 삭제" : "삭제"}</button>
       </div>
     </div>`).join("") : `<div class="empty">${q ? "찾는 게임이 없어요." : "아직 올라온 게임이 없어요."}</div>`;
@@ -136,6 +145,7 @@ $("list").addEventListener("click", async e => {
   const g = games.find(x => x.id === b.dataset.id);
   if (!g) return;
   try {
+    if (b.dataset.act === "img") { imgTarget = g.id; $("imgFor").textContent = "「" + g.t + "」"; $("imgDel").hidden = !g.p; $("imgBox").hidden = false; $("imgBox").scrollIntoView({ block: "nearest" }); return; }
     if (b.dataset.act === "hide") {
       armed = "";
       await updateDoc(doc(db, "index", "all"), { ["g." + g.id + ".h"]: !g.h });
@@ -167,6 +177,29 @@ $("codeForm").addEventListener("submit", async e => {
   } catch (x) { err($("listErr"), authMessage(x)); }
   $("codeBtn").disabled = false;
 });
+
+let imgTarget = "";
+function shrink(file) {
+  return new Promise((ok, bad) => {
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { const w = Math.min(640, im.width), h = Math.round(im.height * w / im.width); const cv = document.createElement("canvas"); cv.width = w; cv.height = h; cv.getContext("2d").drawImage(im, 0, 0, w, h); URL.revokeObjectURL(url); ok(cv.toDataURL("image/jpeg", 0.8)); };
+    im.onerror = () => bad(new Error("이미지를 읽지 못했어요."));
+    im.src = url;
+  });
+}
+async function saveImg(file) {
+  if (!imgTarget || !file || !/^image\//.test(file.type)) return;
+  try {
+    const p = await shrink(file);
+    await updateDoc(doc(db, "index", "all"), { ["g." + imgTarget + ".p"]: p });
+    $("imgBox").hidden = true; imgTarget = ""; $("imgFile").value = "";
+    err($("listErr"), ""); await load();
+  } catch (x) { err($("listErr"), x.code ? authMessage(x) : x.message); }
+}
+$("imgFile").addEventListener("change", () => saveImg($("imgFile").files[0]));
+document.addEventListener("paste", e => { if (!imgTarget) return; const f = [...((e.clipboardData && e.clipboardData.files) || [])].find(f => /^image\//.test(f.type)); if (f) { e.preventDefault(); saveImg(f); } });
+$("imgCancel").addEventListener("click", () => { $("imgBox").hidden = true; imgTarget = ""; });
+$("imgDel").addEventListener("click", async () => { if (!imgTarget) return; try { await updateDoc(doc(db, "index", "all"), { ["g." + imgTarget + ".p"]: deleteField() }); $("imgBox").hidden = true; imgTarget = ""; await load(); } catch (x) { err($("listErr"), authMessage(x)); } });
 
 $("exForm").addEventListener("submit", async e => {
   e.preventDefault();
